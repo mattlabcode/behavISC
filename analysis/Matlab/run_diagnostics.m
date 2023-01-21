@@ -1,0 +1,301 @@
+% STEP 1: 
+clc
+clear all;
+cd('C:\Users\mbain25\Documents\efflisb\Analysis')
+addpath(genpath('matlab'))
+rng_cfig = rng(257);
+
+%(*)define params
+n_blocks      = 2;
+rej_subj      = [16 18 20 33 47 69]; % subj to reject (both blocks - nnative or other reason)
+logtrans      = 0;
+
+do_save       = 0;
+overwrite     = 0;
+overwrite_ind = 0; % overwrite individual 'processed' files? (0/1)
+
+% input
+datadir = 'C:\Users\mbain25\Documents\efflisb\Data';
+logs    = dir(fullfile(datadir, '*.mat'));
+
+% savefile
+savefile_av = ['Group_Processing' '/' 'av_processed' '_logtrans_' num2str(logtrans) '_online_0' '.mat']; % metrics averaged across subj
+
+% check if savefile already exists
+if do_save
+    if exist(savefile_av, 'file')
+        if overwrite 
+            disp('overwriting existing savefile')
+        else
+            error(['file ' savefile_av ' exists already. Either delete or use new parameters!'])
+        end
+    end
+end
+
+% process individual data -------------------------------------------------
+% initialize fields for group average output ***get fields from dx (remove irrelevant ones later in script)
+%{
+fields = {'dual_score', 'comp_score', 'engagement' 'eengagement', 'mental_sim', 'enjoyment', ...
+    'absorption', 'attention', 'n_misses', 'n_rej', 'av_RT', 'sd_RT', 'min_RT', 'max_RT', ...
+    'avRT_upp', 'avRT_low', 'prop_upper', 'av_latency'};
+
+for s = 1:n_blocks
+    for f = 1:length(fields)
+        dxav(s).(fields{f}) = [];
+    end
+end
+%}
+
+% convert rejected participants to file indices
+rej_ix = [rej_subj*2 - 1, rej_subj*2]; 
+
+% struct to track # subjects rejected for failing each criterion
+rej_fields = {'comp', 'dt', 'misses', 'familiarity'};
+for f = 1:length(rej_fields)
+    nrej.(rej_fields{f}) = 0;
+end
+
+% rejected trial counters for each block
+%[nrej_tt.err, nrej_tt.uppol, nrej_tt.lowol] = deal(zeros(1, length(logs)));
+
+dxav = [];
+for i = 1:length(logs)    
+    
+    % read in current logfile
+    load([datadir '/' logs(i).name]) 
+    
+    % get subj # and name output file
+    filename = logs(i).name;
+    subj_num = filename(1:(length(filename) - 4)); 
+    savefile = ['Individual_Processing' filesep subj_num '_processed' '.mat'];
+    
+    % store condition info
+    dx.fname   = info.fname;
+    dx.version = info.version;
+    story      = str2double(info.fname(6)); % story #
+    
+    disp(dx.fname)
+    
+    % store all participant info again
+    dx.info = info;
+    
+    % questionnaire processing --------------------------------------------
+    % find compqs where > one key pressed in rapid succession & store only first
+    for r = 1:length(comp_responses)
+        if strcmp(class(comp_responses{r}), 'cell') 
+            comp_responses(r) = comp_responses{r}(1); 
+        end
+    end     
+    
+    % get compq resonses in readable format
+    comp_str = cellfun(@(v)v(1), comp_responses); 
+    for j = 1:length(comp_responses)
+        comp_mat(j) = str2double(comp_str(j));
+    end
+    
+    % get compq answers
+    comp_ans = [info.comp_ans{:}]; 
+
+    % store compq score
+    dx.comp_score = (nnz(comp_mat == comp_ans) / length(comp_ans))*100;
+
+    % store familiarity
+    dx.familiarity = familiarity;
+    
+    % find all narrative qs where > one key pressed in rapid succession & store only first
+    for q = 1:length(engagement_responses)
+        if strcmp(class(engagement_responses{q}), 'cell') 
+            engagement_responses(q) = engagement_responses{q}(1); 
+        end
+    end     
+    
+    % get narrative q responses in readable format
+    engagement_str = cellfun(@(v)v(1), engagement_responses); 
+    for k = 1:length(engagement_str)
+        engagement_mat(k) = str2double(engagement_str(k));
+    end
+    
+    % extract non-numerical portions of narrative ids
+    for m = 1:length(info.engagement_ids) 
+        engagement_ids{m} = info.engagement_ids{m}((find(isletter(info.engagement_ids{m}))));
+    end
+    
+    % store positions of different narrative qs for each dimension
+    [unique_ids, ~, ixb] = unique(engagement_ids, 'stable');
+    
+    % calculate narrative q score for each dimension 
+    for n = 1:length(unique_ids)
+        curr_id = unique_ids{n}; % get new field name
+        engagement_score.(curr_id) = mean(engagement_mat(find(ixb == n)));
+    end
+    
+    % store all engagement q scores
+    dx.narrative_score = engagement_score;
+    
+    % store average of absorption aggregate
+    dx.absorption = mean(engagement_mat(find([ixb == find(strcmp(unique_ids, 'EE')) | ...
+        ixb == find(strcmp(unique_ids, 'A')) | ixb == find(strcmp(unique_ids, 'MS'))])));
+            
+    % store other averaged metrics
+    dx.engagement  = mean(engagement_mat); % aggregated engagement metric
+    dx.enjoyment   = engagement_score.E;
+    dx.attention   = engagement_score.A;
+    dx.eengagement = engagement_score.EE;
+    dx.mental_sim  = engagement_score.MS;
+    
+    % store run parameters ------------------------------------------------
+    % find trials where > one key pressed in rapid succession; store only 1st
+    for p = 1:length(keyCode)
+        if length(keyCode{p}) > 1
+            keyCode(p) = keyCode{p}(1);
+        end
+    end     
+    
+    dx.prop_upper = nnz(isstrprop([info.targets{:}], 'upper')) ... 
+        / length(info.targets);                        % proportion uppercase targs         
+    dx.av_latency = mean(tTarget - info.timings)*1000; % average target onset latency
+    
+    % task processing -----------------------------------------------------
+    dx.n_misses = nnz(cellfun(@isnan, keyCode));    % # missed targets
+    dx.dual_score = nnz(strcmp(keyCode, 'm') == ... % dual task score
+        cell2mat(isstrprop(info.targets, 'upper'))) / length(info.timings);
+    
+    % log transform RTs to make normally distributed
+    if logtrans
+        secs = log10(secs);
+    end
+    
+	% reject any error trials
+	dx.nrejtt_err = nnz( ~(strcmp(keyCode, 'm') == cell2mat(isstrprop(info.targets, 'upper'))) );
+    secs(find(strcmp(keyCode, 'm') == cell2mat(isstrprop(info.targets, 'upper')) == 0)) = nan;
+        
+    % letter case indices
+    upper_ix = find(isstrprop([info.targets{:}], 'upper'));
+    lower_ix = find(isstrprop([info.targets{:}], 'lower'));
+    
+    % RT descriptives by case
+    avRT_upp = nanmean(secs(upper_ix));
+    avRT_low = nanmean(secs(lower_ix));
+	sdRT_upp = nanstd(secs(upper_ix));
+    sdRT_low = nanstd(secs(lower_ix));
+    
+    % --- reject trials (1.96 sd > av for corresponding case) --- 
+	upp_rejix = find(abs(secs(upper_ix) - avRT_upp) > 1.959*sdRT_upp);    
+    low_rejix = find(abs(secs(lower_ix) - avRT_low) > 1.959*sdRT_low);    
+
+    % store # outliers
+    dx.nrejtt_uppol = nnz(upp_rejix);
+	dx.nrejtt_lowol = nnz(low_rejix);
+    
+    % reject
+	secs(upp_rejix) = nan;
+	secs(low_rejix) = nan;
+    
+    % RT descriptives by case post-rejection
+    dx.avRT_upp = nanmean(secs(upper_ix));
+    dx.avRT_low = nanmean(secs(lower_ix));
+	dx.sdRT_upp = nanstd(secs(upper_ix));
+    dx.sdRT_low = nanstd(secs(lower_ix));
+    
+    dx.av_RT = nanmean(secs);
+    dx.sd_RT = nanstd(secs);
+    dx.min_RT = nanmin(secs);
+    dx.max_RT = nanmax(secs);
+    
+    % normalize RTs based on upper/lowercase performance
+    secs_norm = secs;
+    secs_norm(upper_ix) = (secs_norm(upper_ix) - dx.avRT_upp)/dx.sdRT_upp;
+    secs_norm(lower_ix) = (secs_norm(lower_ix) - dx.avRT_low)/dx.sdRT_low;
+            
+    % store RT information
+    dx.secs      = secs;
+    dx.secs_norm = secs_norm;
+    
+    % reject subj -----------------------------------------------------
+    %if dx.comp_score < 70 || dx.dual_score < .8 || dx.n_misses > 14 || dx.familiarity == 'y'
+	%if dx.comp_score < 70 || dx.familiarity == 'y'
+    if ismember(i, rej_ix) % rej these subjects
+        dx.rejected = 1;
+    elseif dx.comp_score < 70 || dx.dual_score < .85 || dx.n_misses > 14 %|| dx.familiarity == 'y' % rej these blocks
+        dx.rejected = 1;
+        if dx.comp_score < 70
+            nrej.comp = nrej.comp + 1;
+        end
+        if dx.dual_score < .85            
+            nrej.dt = nrej.dt + 1;
+        end
+        if dx.n_misses > 14
+            nrej.misses = nrej.misses + 1;
+        end
+        if dx.familiarity == 'y'
+            nrej.familiarity = nrej.familiarity + 1;
+        end
+    else
+        dx.rejected = 0;
+    end
+        
+    %{
+    % get current file number and add to rejected subject vector ***just store this in dx
+    if dx.rejected
+        curr_fid = s*2 - 2 + b;
+        rej_subj = [rej_subj curr_fid];
+    end
+    %}
+    
+    % store group dx ------------------------------------------------------
+    % define all diagnostic metric names
+    fields = fieldnames(dx);
+    fields(ismember(fields, {'fname'})) = []; % remove non-dxav fields
+    
+    % concatenate individual dx
+    if size(dxav, 2) < n_blocks % if current block not yet in dxav
+        for f = 1:length(fields)
+            if ismember(fields{f}, {'secs', 'secs_norm'})
+                dxav(story).(fields{f}) = {dx.(fields{f})};
+            else
+                dxav(story).(fields{f}) = [dx.(fields{f})];
+            end
+        end
+    else
+        for f = 1:numel(fields)
+            if ismember(fields{f}, {'secs', 'secs_norm'})
+                dxav(story).(fields{f}) = [dxav(story).(fields{f}), {dx.(fields{f})}];
+            else
+                dxav(story).(fields{f}) = [dxav(story).(fields{f}), dx.(fields{f})];
+            end
+        end
+    end
+    
+    % save ----------------------------------------------------------------
+    if do_save
+        if exist(savefile, 'file')
+            if overwrite_ind
+                fprintf('Overwriting %s.\n', savefile)
+                save(savefile, '-struct', 'dx') 
+            else
+                disp('File not saved: block already exists.')
+            end
+        else
+            save(savefile, '-struct', 'dx') 
+        end
+    end
+end
+
+% final sample: array of 1/0 if subj rejected (i.e., both blocks rej)
+for j = 1:length(dxav(1).rejected) 
+    subj_incl(j) = ~isequal([dxav(1).rejected(j); dxav(2).rejected(j)], [1 1]');
+end
+
+% --- compute correlation between av RT and av ratings ---
+b = 2;
+dim = 'engagement';
+[r, p] = corr(dxav(b).(dim)(~dxav(b).rejected)', dxav(b).av_RT(~dxav(b).rejected)')
+scatter(dxav(b).(dim)(~dxav(b).rejected)', dxav(b).av_RT(~dxav(b).rejected)')
+
+fprintf('%d/%d subjects rejected.\n', nnz(any([dxav(1).rejected; dxav(2).rejected], 1)), i/2);
+fprintf('%d/%d subjects had at least one run.\n', nnz(subj_incl), i/2);
+
+% save --------------------------------------------------------------------
+if do_save
+    save(savefile_av, 'dxav')
+end
