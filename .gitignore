@@ -1,5 +1,27 @@
+## Generic
+# data
 data/
+analysis/Matlab/raw/
+analysis/efflisisc_online.xls
 
-notes/
-behavISCana guide.rtf
-experiment guide.xlsx
+# logs
+analysis/Group_Processing/
+analysis/Individual_Processing/
+
+# archived
+**/archive/
+*_archive
+
+## Particular
+analysis/Matlab/MAE-ATTN-100.csv
+
+## System-generated
+# settings
+*.DS_Store
+
+## R-generated
+# session data
+analysis/.RData
+
+# history files
+analysis/.Rhistory
