@@ -21,7 +21,7 @@ analysis/Matlab/MAE-ATTN-100.csv
 
 ## R-generated
 # session data
-analysis/.RData
+analysis/Matlab/.RData
 
 # history files
-analysis/.Rhistory
+analysis/Matlab/.Rhistory
