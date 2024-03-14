@@ -25,13 +25,13 @@ ci            = zeros(2, length(mean1));
 % go through all groups
 for i = 1:length(mean1)
 
-    % compute df (Welch–Satterthwaite equation)
+    % compute df (Welchâ€“Satterthwaite equation)
     df1   = (var1(i)/n1(i) + var2(i)/n2(i))^2;
     df2   = (((var1(i)/n1(i))^2) / (n1(i) - 1)) + (((var2(i)/n2(i))^2) / (n2(i) - 1));
     df(i) = df1/df2;
     
     % compute t
-	ser     = sqrt(var1(i)/n1(i) + var2(i)/n2(i));
+    ser     = sqrt(var1(i)/n1(i) + var2(i)/n2(i));
     xdiff   = mean1(i) - mean2(i);
     tval(i) = xdiff/ser;    
 
