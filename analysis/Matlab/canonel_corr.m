@@ -1,6 +1,6 @@
 clc
 clear all;
-cd('/Users/matthewbain/Documents/Science/Experiments/efflisisc/analysis/')
+cd('/analysis/')
 addpath(genpath('matlab'))
 rng_cfig = rng(257);
 
