@@ -4,7 +4,7 @@
 
 clc
 clear all;
-cd('C:\Users\mbain25\Documents\efflisb\Analysis')
+cd('C:\Analysis')
 addpath(genpath('matlab'))
 rng_cfig = rng(257);
 
